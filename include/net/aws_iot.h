@@ -203,6 +203,13 @@ struct aws_iot_config {
 	char *host_name;
 	/** Length of host_name string. */
 	size_t host_name_len;
+
+  /* LWT Topic */
+  char *lwt_topic;
+  uint8_t lwt_topic_len;
+  /* LWT Message */
+  char *lwt_msg;
+  uint8_t lwt_msg_len;
 };
 
 /** @brief Initialize the module.

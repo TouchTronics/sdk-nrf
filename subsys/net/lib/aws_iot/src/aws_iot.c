@@ -19,7 +19,7 @@
 
 #include <zephyr/logging/log.h>
 
-LOG_MODULE_REGISTER(aws_iot, CONFIG_AWS_IOT_LOG_LEVEL);
+LOG_MODULE_REGISTER(aws_iot, 4);
 
 /* Check if the static host name is set and if its buffer is larger enough if
  * static host name is used
@@ -126,6 +126,9 @@ static aws_iot_evt_handler_t module_evt_handler;
 
 static atomic_t disconnect_requested;
 static atomic_t connection_poll_active;
+
+static char lwt_topic_msg[] = "{\"connection_loss_alert\": {\"serial_number\": \"XXXXXXXXXXXXXXXX\"}}}";
+static char lwt_topic[] = "coolguardAlerts/connectionLoss";
 
 /* Flag that indicates if the client is disconnected from the
  * AWS IoT broker, or not.
@@ -826,9 +829,28 @@ static int broker_init(void)
 }
 #endif /* !defined(CONFIG_AWS_IOT_STATIC_IP) */
 
-static int client_broker_init(struct mqtt_client *const client)
+static const char* test = "test";
+
+
+// static char lwt_topic_msg[] = "{\"connection_loss_alert\": {\"serial_number\": \"XXXXXXXXXXXXXXXX\"}}}";
+// static char lwt_topic[] = "coolguardAlerts/connectionLost";
+
+
+static int client_broker_init(struct mqtt_client *const client, struct aws_iot_config *const config)
 {
 	int err;
+  static char static_lwt_topic[255] = {0};
+  static char static_lwt_message[255] = {0};
+
+  // Log out the lwt topic and message from config
+  LOG_INF("LWT Topic: %s", lwt_topic);
+  LOG_INF("LWT Message: %s", lwt_topic_msg);
+  // Log out the sizes
+  LOG_INF("LWT Topic Size: %d", sizeof(lwt_topic));
+  LOG_INF("LWT Message Size: %d", sizeof(lwt_topic_msg));
+
+  //memcpy(static_lwt_topic, config->lwt_topic, config->lwt_topic_len);
+  // memcpy(static_lwt_message, config->lwt_msg, config->lwt_msg_len);
 
 	mqtt_client_init(client);
 
@@ -849,16 +871,18 @@ static int client_broker_init(struct mqtt_client *const client)
 	client->tx_buf			= tx_buffer;
 	client->tx_buf_size		= sizeof(tx_buffer);
 	client->transport.type		= MQTT_TRANSPORT_SECURE;
+  client->keepalive = 30;
+  LOG_INF("Keep alive: %d", client->keepalive);
 
 #if defined(CONFIG_AWS_IOT_LAST_WILL)
 	static struct mqtt_topic last_will_topic = {
-		.topic.utf8 = CONFIG_AWS_IOT_LAST_WILL_TOPIC,
+		.topic.utf8 = lwt_topic,
 		.topic.size = sizeof(CONFIG_AWS_IOT_LAST_WILL_TOPIC) - 1,
 		.qos = MQTT_QOS_0_AT_MOST_ONCE
 	};
 
 	static struct mqtt_utf8 last_will_message = {
-		.utf8 = CONFIG_AWS_IOT_LAST_WILL_MESSAGE,
+		.utf8 = lwt_topic_msg,
 		.size = sizeof(CONFIG_AWS_IOT_LAST_WILL_MESSAGE) - 1
 	};
 
@@ -888,11 +912,18 @@ static int client_broker_init(struct mqtt_client *const client)
 	return err;
 }
 
+// static char lwt_topic_msg[] = "{\"connection_loss_alert\": {\"serial_number\": \"XXXXXXXXXXXXXXXX\"}}}";
+// static char lwt_topic[] = "coolguardAlerts/connectionLost";
+
 static int connect_client(struct aws_iot_config *const config)
 {
 	int err;
 
-	err = client_broker_init(&client);
+  // Log out the lwt topic and message from config
+  LOG_INF("LWT B Topic: %s", lwt_topic_msg);
+  LOG_INF("LWT B Message: %s", lwt_topic);
+
+	err = client_broker_init(&client, config);
 	if (err) {
 		LOG_ERR("client_broker_init, error: %d", err);
 		return err;
@@ -1037,6 +1068,10 @@ int aws_iot_connect(struct aws_iot_config *const config)
 {
 	int err;
 
+  // Log out the lwt topic and message from config
+  LOG_INF("LWT Topic: %s", config->lwt_topic);
+  LOG_INF("LWT Message: %s", config->lwt_msg);
+
 	if (IS_ENABLED(CONFIG_AWS_IOT_CONNECTION_POLL_THREAD)) {
 		err = connection_poll_start();
 		if (err) {
@@ -1083,10 +1118,17 @@ int aws_iot_subscription_topics_add(
 	return 0;
 }
 
+// static char lwt_topic_msg[] = "{\"connection_loss_alert\": {\"serial_number\": \"XXXXXXXXXXXXXXXX\"}}}";
+// static char lwt_topic[] = "coolguardAlerts/connectionLost";
+
 int aws_iot_init(const struct aws_iot_config *const config,
 		 aws_iot_evt_handler_t event_handler)
 {
 	int err;
+
+  // Copy over the lwt topic and message
+  memcpy(lwt_topic, config->lwt_topic, config->lwt_topic_len);
+  memcpy(lwt_topic_msg, config->lwt_msg, config->lwt_msg_len);
 
 	if ((IS_ENABLED(CONFIG_AWS_IOT_CLIENT_ID_APP) ||
 	     IS_ENABLED(CONFIG_AWS_IOT_BROKER_HOST_NAME_APP)) &&
